@@ -1,6 +1,5 @@
 from sqlmodel import SQLModel
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
-from sqlalchemy.orm import sessionmaker
 from typing import AsyncGenerator
 from src.config import Config
 
