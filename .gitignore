@@ -1,3 +1,5 @@
 ml-latest
 node_modules
 .venv
+database
+__pycache__
