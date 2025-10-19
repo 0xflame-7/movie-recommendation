@@ -3,3 +3,4 @@ node_modules
 .venv
 database
 __pycache__
+data

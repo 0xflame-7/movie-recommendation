@@ -40,7 +40,7 @@ class Session(SQLModel, table=True):
 
     user_agent: str | None = Field(default=None, nullable=True)
     ip_address: str | None = Field(default=None, nullable=True)
-    refresh_token: str | None = Field(default=None, nullable=True, repr=False)
+    refresh_token: str = Field(default=None, nullable=True, repr=False)
     valid: bool | None = Field(default=True, nullable=False)
 
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

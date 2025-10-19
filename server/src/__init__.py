@@ -1,7 +1,7 @@
 from fastapi import FastAPI, status
 from contextlib import asynccontextmanager
 from src.db import init_db
-from src.api.routes import router as auth_router
+from src.api.routes import auth_router, user_router
 
 
 @asynccontextmanager
@@ -14,7 +14,9 @@ async def life_span(app: FastAPI):
 
 app = FastAPI(title="FilmFlare", description="FilmFlare API", lifespan=life_span)
 
+
 app.include_router(auth_router)
+app.include_router(user_router)
 
 
 @app.get("/", status_code=status.HTTP_200_OK)

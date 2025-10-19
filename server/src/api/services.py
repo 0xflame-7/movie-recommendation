@@ -4,7 +4,7 @@ from sqlalchemy.future import select
 from src.db import get_session
 from src.config import Config
 from src.api.models import User, UserAuth, Session, AuthProvider
-from src.api.schemas import RegisterData, Tokens, LoginData
+from src.api.schemas import RegisterData, LoginData, AuthResponse, AuthGuard, UserMe
 from jwt import encode, decode, ExpiredSignatureError, InvalidTokenError
 import bcrypt
 import uuid
@@ -19,12 +19,14 @@ class PasswordService:
     """Handles password hashing and verification."""
 
     @staticmethod
-    def hash_password(password: str) -> str:
-        return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+    def hashed(password: str) -> str:
+        return bcrypt.hashpw(password[:72].encode("utf-8"), bcrypt.gensalt()).decode(
+            "utf-8"
+        )
 
     @staticmethod
-    def verify_password(password: str, hashed: str) -> bool:
-        return bcrypt.checkpw(password.encode(), hashed.encode())
+    def compareHash(password: str, hashed: str) -> bool:
+        return bcrypt.checkpw(password[:72].encode("utf-8"), hashed.encode("utf-8"))
 
 
 class JWTService:
@@ -48,10 +50,12 @@ class JWTService:
         return encode(payload, self.jwt_secret, algorithm="HS256")
 
     def generate_refresh_token(self, user_id: uuid.UUID, session_id: uuid.UUID) -> str:
-        expire = datetime.now(timezone.utc) + timedelta(days=self.refresh_expire_days)
+        now = datetime.now(timezone.utc)
+        expire = now + timedelta(days=self.refresh_expire_days)
         payload = {
             "user_id": str(user_id),
             "session_id": str(session_id),
+            "iat": int(now.timestamp()),
             "exp": int(expire.timestamp()),
         }
         return encode(payload, self.jwt_refresh_secret, algorithm="HS256")
@@ -87,7 +91,9 @@ class AuthService:
         self.cookie_name = Config.COOKIE_TOKEN
 
     # REGISTER
-    async def register_user(self, data: RegisterData) -> Tokens:
+    async def register_user(
+        self, data: RegisterData, response: Response
+    ) -> AuthResponse:
         try:
             q = select(UserAuth).filter_by(email=data["email"])
             res = await self.session.execute(q)
@@ -97,7 +103,7 @@ class AuthService:
                     detail="User already exists",
                 )
 
-            hashed_password = self.password_service.hash_password(data["password"])
+            hashed_password = self.password_service.hashed(data["password"])
 
             user = User(name=data["name"])
             self.session.add(user)
@@ -124,12 +130,15 @@ class AuthService:
             refresh_token = self.jwt_service.generate_refresh_token(
                 user.id, session_user.id
             )
+
+            self._set_cookie_token(response, refresh_token)
+            refresh_token = self.password_service.hashed(refresh_token)
             session_user.refresh_token = refresh_token
 
             await self.session.commit()
             logger.info(f"User registered successfully: {user.name}")
 
-            return {"accessToken": access_token, "refreshToken": refresh_token}
+            return {"success": True, "accessToken": access_token}
 
         except HTTPException:
             raise
@@ -139,7 +148,7 @@ class AuthService:
             raise HTTPException(status_code=500, detail="Internal server error")
 
     # LOGIN
-    async def login_user(self, data: LoginData) -> Tokens:
+    async def login_user(self, data: LoginData, response: Response) -> AuthResponse:
         try:
             q = select(UserAuth).filter_by(email=data["email"])
             res = await self.session.execute(q)
@@ -160,7 +169,7 @@ class AuthService:
             if user_auth.provider != AuthProvider.EMAIL or not user_auth.password:
                 raise HTTPException(status_code=401, detail="Not an email-auth user")
 
-            if not self.password_service.verify_password(
+            if not self.password_service.compareHash(
                 data["password"], user_auth.password
             ):
                 raise HTTPException(status_code=401, detail="Invalid credentials")
@@ -179,12 +188,16 @@ class AuthService:
             refresh_token = self.jwt_service.generate_refresh_token(
                 user.id, session_user.id
             )
+
+            self._set_cookie_token(response, refresh_token)
+            refresh_token = self.password_service.hashed(refresh_token)
+
             session_user.refresh_token = refresh_token
 
             await self.session.commit()
             logger.info(f"User logged in successfully: {user.name}")
 
-            return {"accessToken": access_token, "refreshToken": refresh_token}
+            return {"success": True, "accessToken": access_token}
 
         except HTTPException:
             raise
@@ -194,7 +207,7 @@ class AuthService:
             raise HTTPException(status_code=500, detail="Internal server error")
 
     # COOKIES
-    def set_cookie_token(self, response: Response, token: str) -> None:
+    def _set_cookie_token(self, response: Response, token: str) -> None:
         response.set_cookie(
             key=self.cookie_name,
             value=token,
@@ -205,21 +218,23 @@ class AuthService:
             max_age=7 * 24 * 60 * 60,
         )
 
-    def delete_cookie_token(self, response: Response) -> None:
-        response.delete_cookie(key=self.cookie_name)
+    def _delete_cookie_token(self, response: Response) -> None:
+        response.delete_cookie(
+            key=self.cookie_name,
+            path="/auth",
+            httponly=True,
+            samesite="none" if Config.is_production else "lax",
+            secure=Config.is_production,
+        )
 
-    async def logout_user(self, token: str, response: Response):
+    # Logout
+    # AuthService.logout_user
+    async def logout_user(self, auth_data: AuthGuard, response: Response):
         """Invalidate the current session and clear cookie."""
         try:
-            payload = self.jwt_service.decode_token(token, refresh=True)
-            session_id = payload.get("session_id")
+            session_id = auth_data["session_id"]
 
-            if not session_id:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid session",
-                )
-
+            # Fetch session from DB
             q = select(Session).filter_by(id=session_id, valid=True)
             res = await self.session.execute(q)
             session_obj = res.scalars().one_or_none()
@@ -227,13 +242,15 @@ class AuthService:
             if not session_obj:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid session",
+                    detail="Invalid or expired session",
                 )
 
             session_obj.valid = False
+            self._delete_cookie_token(response)
             await self.session.commit()
-            self.delete_cookie_token(response)
-            logger.info("User logged out successfully")
+            logger.info(f"User logged out successfully (session: {session_id})")
+
+            return {"success": True, "message": "Logged out successfully"}
 
         except HTTPException:
             raise
@@ -245,5 +262,123 @@ class AuthService:
                 detail=f"Logout failed: {str(e)}",
             )
 
-    async def refresh_token(self, refresh_token: str, response: Response):
-        return
+    # Refresh Token
+    async def refresh_token(
+        self, refresh_token: str, response: Response
+    ) -> AuthResponse:
+        """Validates refresh token, issues new access token, rotates if near expiry."""
+        try:
+            # Decode and verify refresh token
+            payload = self.jwt_service.decode_token(refresh_token, refresh=True)
+            user_id = uuid.UUID(payload.get("user_id"))
+            session_id = uuid.UUID(payload.get("session_id"))
+            iat = payload.get("iat")
+            exp = payload.get("exp")
+
+            if iat is None or exp is None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Malformed token: missing iat or exp claim",
+                )
+
+            issued_at = datetime.fromtimestamp(float(iat), tz=timezone.utc)
+            expires_at = datetime.fromtimestamp(float(exp), tz=timezone.utc)
+
+            # Validate session in DB
+            q = select(Session).filter_by(id=session_id, valid=True)
+            res = await self.session.execute(q)
+            session_obj = res.scalars().one_or_none()
+            if not session_obj:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid session",
+                )
+
+            # Match stored refresh token hash
+            if not self.password_service.compareHash(
+                refresh_token, session_obj.refresh_token
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid refresh token",
+                )
+
+            # Generate new access token
+            access_token = self.jwt_service.generate_access_token(user_id, session_id)
+
+            # Check if refresh token should rotate (¾ lifetime)
+            expires_in = int((expires_at - issued_at).total_seconds())
+            should_rotate = await self._should_rotate_refresh_token(
+                issued_at, expires_in
+            )
+
+            if should_rotate:
+                new_refresh_token = self.jwt_service.generate_refresh_token(
+                    user_id, session_id
+                )
+                hashed_refresh = self.password_service.hashed(new_refresh_token)
+
+                # Update DB
+                session_obj.refresh_token = hashed_refresh
+                await self.session.commit()
+
+                # Update cookie
+                self._set_cookie_token(response, new_refresh_token)
+                logger.info(f"Rotated refresh token for session: {session_id}")
+            else:
+                logger.debug("Refresh token reused (not rotated yet).")
+
+            return {"success": True, "accessToken": access_token}
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            await self.session.rollback()
+            logger.exception("Token refresh failed: %s", e)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Token refresh failed",
+            )
+
+    async def _should_rotate_refresh_token(
+        self, issued_at: datetime, expires_in: int
+    ) -> bool:
+        """
+        Returns True if the refresh token is close to expiring (1/4 lifetime left).
+        `issued_at` → datetime token was created
+        `expires_in` → lifetime in seconds (from Config or token claim)
+        """
+        now = datetime.now(timezone.utc)  # make aware
+        elapsed = (now - issued_at).total_seconds()
+        quarter_life = expires_in * 0.75
+        return elapsed >= quarter_life
+
+
+class UserService:
+    """Handles user-related operations."""
+
+    def __init__(self, session: AsyncSession = Depends(get_session)):
+        self.session = session
+
+    async def get_user(self, user_id: uuid.UUID) -> UserMe:
+        try:
+            q = select(User).filter_by(id=user_id)
+            res = await self.session.execute(q)
+            user = res.scalars().one_or_none()
+
+            if not user:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="User not found",
+                )
+
+            return {"name": user.name, "profilePic": user.profilePic}
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception("Failed to fetch user by id %s: %s", user_id, e)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to fetch user",
+            )

@@ -1,5 +1,6 @@
 from pydantic import BaseModel, EmailStr
-from typing import TypedDict
+from typing_extensions import TypedDict
+from uuid import UUID
 
 
 class RegisterRequest(BaseModel):
@@ -21,11 +22,6 @@ class RegisterData(TypedDict):
     client_host: str | None
 
 
-class Tokens(TypedDict):
-    accessToken: str
-    refreshToken: str
-
-
 class AuthResponse(TypedDict):
     success: bool
     accessToken: str
@@ -34,11 +30,6 @@ class AuthResponse(TypedDict):
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
-
-
-class LoginResponse(BaseModel):
-    success: bool
-    accessToken: str
 
 
 class LoginData(TypedDict):
@@ -55,3 +46,13 @@ class RefreshResponse(BaseModel):
 
 class LogoutResponse(BaseModel):
     success: bool
+
+
+class AuthGuard(TypedDict):
+    user_id: UUID
+    session_id: UUID
+
+
+class UserMe(TypedDict):
+    name: str
+    profilePic: str | None
