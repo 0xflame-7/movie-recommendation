@@ -1,10 +1,11 @@
-import { Button } from "@/components/ui/button";
+import { ThemeProvider } from "next-themes";
+import Routes from "./routes/routes";
 
 function App() {
   return (
-    <div className="flex min-h-svh flex-col items-center justify-center">
-      <Button>Click me</Button>
-    </div>
+    <ThemeProvider attribute="class" defaultTheme="system" enableSystem={true}>
+      <Routes />
+    </ThemeProvider>
   );
 }
 
