@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   AuthResponse,
   User,
@@ -6,10 +6,10 @@ import type {
   RegisterRequest,
   AuthContextType,
 } from "@/types";
-import type {
+import {
   AxiosError,
-  AxiosResponse,
-  InternalAxiosRequestConfig,
+  type AxiosResponse,
+  type InternalAxiosRequestConfig,
 } from "axios";
 import { AuthContext } from "@/context/authContext";
 import api from "@/lib/api";
@@ -25,15 +25,15 @@ interface ExtendedRequestConfig extends InternalAxiosRequestConfig {
 
 export default function AuthProvider({ children }: Props) {
   const [token, setToken] = useState<string | null>(
-    () => sessionStorage.getItem("authToken") || null
+    () => sessionStorage.getItem("Token") || null
   );
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
 
   // Persist token
   useEffect(() => {
-    if (token) sessionStorage.setItem("authToken", token);
-    else sessionStorage.removeItem("authToken");
+    if (token) sessionStorage.setItem("Token", token);
+    else sessionStorage.removeItem("Token");
   }, [token]);
 
   // Try refreshing on mount
@@ -75,31 +75,16 @@ export default function AuthProvider({ children }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const fetchMe = useCallback(async () => {
+  // Add this ref to track interceptor readiness
+  const interceptorReady = useRef(false);
+
+  // Update the request interceptor useEffect to set the ref
+  useEffect(() => {
     if (!token) {
-      setLoading(false);
+      interceptorReady.current = false; // Reset if no token
       return;
     }
-    setLoading(true);
-    try {
-      const response = await api.get<User>("/user/me");
-      setUser(response.data);
-      setLoading(false);
-    } catch {
-      setToken(null);
-      setUser(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [token]);
 
-  // Fetch user
-  useEffect(() => {
-    fetchMe();
-  }, [fetchMe]);
-
-  // Request interceptor
-  useEffect(() => {
     const authInterceptor = api.interceptors.request.use(
       (config: ExtendedRequestConfig): ExtendedRequestConfig => {
         if (!config._retry && token) {
@@ -109,8 +94,38 @@ export default function AuthProvider({ children }: Props) {
         return config;
       }
     );
-    return () => api.interceptors.request.eject(authInterceptor);
+
+    interceptorReady.current = true; // Mark as ready after install
+
+    return () => {
+      api.interceptors.request.eject(authInterceptor);
+      interceptorReady.current = false;
+    };
   }, [token]);
+
+  // Update fetchMe to wait for readiness (and remove setLoading(false) early return)
+  const fetchMe = useCallback(async () => {
+    if (!token || !interceptorReady.current) {
+      // Optionally queue or skip; for now, just bail without loading
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await api.get<User>("/user/me");
+      setUser(response.data);
+    } catch {
+      setToken(null);
+      setUser(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [token]); // Still depends on token, but now checks ref inside
+
+  // Fetch user useEffect remains the same
+  useEffect(() => {
+    fetchMe();
+  }, [fetchMe]);
 
   // Response interceptor (refresh)
   useEffect(() => {
@@ -183,9 +198,17 @@ export default function AuthProvider({ children }: Props) {
       });
       return response.data;
     } catch (error: unknown) {
-      toast.error("Registration failed", {
-        description: (error as Error)?.message || "An error occurred.",
-      });
+      let errorMsg = "Registration failed.";
+      if (error instanceof AxiosError) {
+        errorMsg =
+          error.response?.data?.message ||
+          error.response?.data?.detail ||
+          error.message ||
+          "Registration failed.";
+      } else if (error instanceof Error) {
+        errorMsg = error.message;
+      }
+      toast.error("Registration failed", { description: errorMsg });
       throw error;
     } finally {
       setLoading(false);

@@ -26,11 +26,10 @@ const registerSchema = z
     confirmPassword: z.string(),
   })
   .refine((data) => data.password === data.confirmPassword, {
-    message: "Passwords do not match",
     path: ["confirmPassword"],
+    message: "Passwords do not match",
   });
 
-// Type for form data (inferred from schema)
 type RegisterFormData = z.infer<typeof registerSchema>;
 
 export default function RegisterPage() {
@@ -39,13 +38,16 @@ export default function RegisterPage() {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
-  // Ensure useAuth is used within AuthProvider
   if (!auth) {
     throw new Error("useAuth must be used within an AuthProvider");
   }
   const { register: signup, loading: authLoading } = auth;
 
-  const form = useForm<RegisterFormData>({
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<RegisterFormData>({
     resolver: zodResolver(registerSchema),
     defaultValues: {
       fullName: "",
@@ -58,22 +60,19 @@ export default function RegisterPage() {
   const onSubmit = async (data: RegisterFormData) => {
     setIsLoading(true);
     setError(null);
-
     try {
       await signup({
         name: data.fullName,
         email: data.email,
         password: data.password,
       });
-      setLocation("/"); // Redirect after signup
+      setLocation("/");
     } catch (err: unknown) {
-      let errorMsg = "An error occurred.";
+      let errorMsg = "Registration failed.";
       if (err instanceof AxiosError) {
         errorMsg =
-          (err.response?.data as { message?: string; detail?: string })
-            ?.message ||
-          (err.response?.data as { message?: string; detail?: string })
-            ?.detail ||
+          err.response?.data?.message ||
+          err.response?.data?.detail ||
           err.message ||
           "Registration failed.";
       } else if (err instanceof Error) {
@@ -85,25 +84,18 @@ export default function RegisterPage() {
     }
   };
 
-  // Placeholder for Google OAuth signup
   const onGoogleSignup = async () => {
     setIsLoading(true);
     setError(null);
-
     try {
-      // Placeholder: Implement Google OAuth logic here
       toast.error("Google signup not implemented", {
         description: "Google OAuth functionality is not yet available.",
       });
     } catch (err: unknown) {
-      let errorMsg = "An error occurred.";
-      if (err instanceof Error) {
-        errorMsg = err.message;
-      }
+      const errorMsg =
+        err instanceof Error ? err.message : "An error occurred.";
       setError(errorMsg);
-      toast.error("Google signup failed", {
-        description: errorMsg,
-      });
+      toast.error("Google signup failed", { description: errorMsg });
     } finally {
       setIsLoading(false);
     }
@@ -112,7 +104,7 @@ export default function RegisterPage() {
   const isDisabled = isLoading || authLoading;
 
   return (
-    <div className="flex items-center justify-center min-h-[calc(100vh-20vh)]">
+    <div className="flex items-center justify-center min-h-[90vh]">
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle className="text-2xl text-center">Create Account</CardTitle>
@@ -120,80 +112,72 @@ export default function RegisterPage() {
             Sign up to get started
           </CardDescription>
         </CardHeader>
-
         <CardContent>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            {/* Full Name */}
-            <div className="gap-2 flex flex-col">
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+            <div className="space-y-2">
               <Label htmlFor="fullName">Full Name</Label>
               <Input
                 id="fullName"
                 placeholder="User Name"
-                {...form.register("fullName")}
+                {...register("fullName")}
                 disabled={isDisabled}
               />
-              {form.formState.errors.fullName && (
+              {errors.fullName && (
                 <p className="text-red-500 text-sm">
-                  {form.formState.errors.fullName.message}
+                  {errors.fullName.message}
                 </p>
               )}
             </div>
 
-            {/* Email */}
-            <div className="gap-2 flex flex-col">
+            <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <Input
                 id="email"
                 type="email"
                 placeholder="you@example.com"
                 autoComplete="off"
-                {...form.register("email")}
+                {...register("email")}
                 disabled={isDisabled}
               />
-              {form.formState.errors.email && (
-                <p className="text-red-500 text-sm">
-                  {form.formState.errors.email.message}
-                </p>
+              {errors.email && (
+                <p className="text-red-500 text-sm">{errors.email.message}</p>
               )}
             </div>
 
-            {/* Password */}
-            <div className="gap-2 flex flex-col">
+            <div className="space-y-2">
               <Label htmlFor="password">Password</Label>
               <Input
                 id="password"
                 type="password"
                 placeholder="At least 6 characters"
                 autoComplete="new-password"
-                {...form.register("password")}
+                {...register("password")}
                 disabled={isDisabled}
               />
-              {form.formState.errors.password && (
+              {errors.password && (
                 <p className="text-red-500 text-sm">
-                  {form.formState.errors.password.message}
+                  {errors.password.message}
                 </p>
               )}
             </div>
 
-            {/* Confirm Password */}
-            <div className="gap-2 flex flex-col">
+            <div className="space-y-2">
               <Label htmlFor="confirmPassword">Confirm Password</Label>
               <Input
                 id="confirmPassword"
                 type="password"
                 placeholder="Re-enter your password"
                 autoComplete="new-password"
-                {...form.register("confirmPassword")}
+                {...register("confirmPassword")}
                 disabled={isDisabled}
               />
-              {form.formState.errors.confirmPassword && (
+              {errors.confirmPassword && (
                 <p className="text-red-500 text-sm">
-                  {form.formState.errors.confirmPassword.message}
+                  {errors.confirmPassword.message}
                 </p>
               )}
             </div>
 
-            {/* Backend error */}
             {error && <p className="text-red-500 text-center">{error}</p>}
 
             <Button type="submit" className="w-full" disabled={isDisabled}>
@@ -201,7 +185,6 @@ export default function RegisterPage() {
             </Button>
           </form>
 
-          {/* Divider */}
           <div className="relative my-6">
             <div className="absolute inset-0 flex items-center">
               <span className="w-full border-t" />
@@ -213,17 +196,14 @@ export default function RegisterPage() {
             </div>
           </div>
 
-          {/* Google signup placeholder */}
-          <div className="flex justify-center">
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={onGoogleSignup}
-              disabled={isDisabled}
-            >
-              Sign up with Google
-            </Button>
-          </div>
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={onGoogleSignup}
+            disabled={isDisabled}
+          >
+            Sign up with Google
+          </Button>
         </CardContent>
       </Card>
     </div>

@@ -53,16 +53,9 @@ export default function LoginPage() {
 
     try {
       await login(data);
-
-      toast.success("Welcome Back", {
-        description: "You have been signed in successfully.",
-      });
       setLocation("/"); // Redirect after login
     } catch (err: unknown) {
       setError((err as Error)?.message || "An error occurred.");
-      toast.error("Login failed", {
-        description: (err as Error)?.message || "An error occurred.",
-      });
     } finally {
       setIsLoading(false);
     }
