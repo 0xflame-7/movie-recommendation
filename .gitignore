@@ -3,6 +3,5 @@ node_modules
 .venv
 database
 __pycache__
-data
 .env
 sample-repo
