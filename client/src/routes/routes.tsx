@@ -3,14 +3,15 @@ import { Header } from "@/components/layout/header";
 import useAuth from "@/hooks/use-auth";
 import RegisterPage from "@/pages/registerPage";
 import LoginPage from "@/pages/loginPage";
+import PerferencesPage from "@/pages/perferencesPage";
 
 export default function Routes() {
   const auth = useAuth();
 
   return (
-    <div className="flex flex-col min-h-screen bg-background text-foreground">
+    <div className="w-screen h-screen overflow-hidden box-border flex flex-col bg-background text-foreground">
       <Header />
-      <main className="flex-1">
+      <main className="flex-1 w-full h-full overflow-hidden box-border">
         <Switch>
           <Route path="/auth/login">
             {auth?.isAuth ? <Redirect to="/" /> : <LoginPage />}
@@ -20,9 +21,7 @@ export default function Routes() {
           </Route>
           {/* Add other routes as needed */}
           <Route path="/">
-            <div className="flex items-center justify-center min-h-[90vh]">
-              <h1>Welcome to FilmFlare</h1>
-            </div>
+            <PerferencesPage />
           </Route>
         </Switch>
       </main>

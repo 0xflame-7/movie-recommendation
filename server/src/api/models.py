@@ -51,16 +51,19 @@ class Session(SQLModel, table=True):
 class Genre(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True, index=True)
     name: str = Field(unique=True, index=True)
+    image_url: str | None = Field(default=None, nullable=True)
 
 
 class Actor(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True, index=True)
     name: str = Field(unique=True, index=True)
+    image_url: str | None = Field(default=None, nullable=True)
 
 
 class Director(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True, index=True)
     name: str = Field(unique=True, index=True)
+    image_url: str | None = Field(default=None, nullable=True)
 
 
 class Movie(SQLModel, table=True):

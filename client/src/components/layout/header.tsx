@@ -1,12 +1,6 @@
 import { Link, useLocation } from "wouter";
 import { Button } from "../ui/button";
-import {
-  LayoutDashboard,
-  LogIn,
-  LogOut,
-  UserPlus,
-  ChevronDown,
-} from "lucide-react";
+import { LogIn, LogOut, UserPlus, ChevronDown, Search } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -35,7 +29,7 @@ export function Header() {
   };
 
   return (
-    <header className="border-b">
+    <header className="border-b flex-none w-full box-border">
       <div className="container mx-auto flex items-center justify-between p-4">
         <Link href="/" className="text-xl font-bold flex items-center gap-2">
           <img
@@ -46,28 +40,14 @@ export function Header() {
           <span>FilmFlare</span>
         </Link>
 
+        <div>Search</div>
+
         <nav className="hidden md:flex items-center gap-2">
+          <Search className="w-5 h-4 mr-2" />
           <ThemeToggle />
 
           {isAuth ? (
             <>
-              <Button variant="ghost" size="sm" asChild>
-                <Link href="/dashboard" className="flex items-center gap-1">
-                  <LayoutDashboard className="size-4" />
-                  Dashboard
-                </Link>
-              </Button>
-
-              <Button variant="ghost" size="sm" asChild>
-                <Link
-                  href="/dashboard/stats"
-                  className="flex items-center gap-1"
-                >
-                  <LayoutDashboard className="size-4" />
-                  My Stats
-                </Link>
-              </Button>
-
               {!!user && (
                 <div className="md:flex items-center space-x-4">
                   <DropdownMenu>

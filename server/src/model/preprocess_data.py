@@ -37,6 +37,18 @@ enriched_df.to_csv("./data/clean_data.csv", index=False)
 
 df = pd.read_csv("./data/clean_data.csv")
 
+
+df["genres"] = (
+    df["genres"].str.replace(r"\|?IMAX\|?", "", regex=True).str.strip("|")
+)  # Remove IMAX and extra pipes
+df["genres"] = df["genres"].replace(
+    "", "(no genres listed)"
+)  # Handle any now-empty genres
+df["avg_rating"] = round(df["avg_rating"], 2)
+df["total_rating_users"] = df["total_rating_users"].astype(int)
+df["tmdbId"] = df["tmdbId"].astype(int)
+df = df[df.genres != "(no genres listed)"]
+
 print(df.isnull().sum())
 df.dropna(inplace=True)
 
